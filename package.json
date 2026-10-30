@@ -1,0 +1,12 @@
+{
+  "name": "mi-casa",
+  "version": "0.1.0",
+  "description": "A household hub for two busy parents: who's doing what this week, a fair-share score, shared todos, and each kid's milestones.",
+  "type": "module",
+  "private": true,
+  "license": "MIT",
+  "scripts": {
+    "test": "TZ=America/Los_Angeles node --test tests/*.test.mjs",
+    "start": "npx --yes serve@14.2.4 ."
+  }
+}
