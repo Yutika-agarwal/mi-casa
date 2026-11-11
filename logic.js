@@ -154,3 +154,98 @@ export function byDue(a, b) {
 
 export const PRIORITIES = ["P0", "P1", "P2"];
 export const nextPriority = (p) => PRIORITIES[(PRIORITIES.indexOf(p) + 1) % PRIORITIES.length];
+
+// ---------- This week: two columns ----------
+
+const TIME_WORDS = { "all day": -1, morning: 480, day: 720, anytime: 750, afternoon: 840, evening: 1080, night: 1260 };
+
+/** Sort key for a card's time label: clock times by the minute, words at a sensible spot in the day. */
+export function timeMins(t) {
+  const s = String(t || "").trim();
+  const m = /^(\d{1,2})(?::(\d{2}))?\s*(am|pm)$/i.exec(s);
+  if (m) return ((+m[1] % 12) + (/pm/i.test(m[3]) ? 12 : 0)) * 60 + (+m[2] || 0);
+  return TIME_WORDS[s.toLowerCase()] ?? 750;
+}
+
+/** Calendar series that show up on 5 or more different days of the week shown (every day or every weekday). */
+export function dailySeries(events) {
+  const days = {};
+  for (const ev of events) {
+    if (!ev.series) continue;
+    (days[ev.series] = days[ev.series] || new Set()).add(dateKey(ev.start));
+  }
+  return new Set(Object.keys(days).filter((k) => days[k].size >= 5));
+}
+
+/**
+ * Does a card belong in the right-hand "Every day" column?
+ * Generated cards say so themselves (daily: true). Calendar events count when their series is daily.
+ * Closures are never routine.
+ */
+export function isEveryDay(card, daily) {
+  if (card.closure) return false;
+  if (card.cal) return !!(card.series && daily.has(card.series));
+  return !!card.daily;
+}
+
+// ---------- This month: only the big things ----------
+
+export const ROUTINE_WORDS = /\b(commute|breakfast|lunch|dinner|standup|stand-up|gym|workout|bedtime|nap|school run|drop[- ]?off|pick[- ]?up|focus time|working hours)\b/i;
+
+/** Series that repeat 2 or more times inside any single calendar month. Yearly and monthly events don't. */
+export function repeatingSeries(events) {
+  const n = {};
+  for (const ev of events) {
+    if (!ev.series) continue;
+    const k = ev.series + "|" + dateKey(ev.start).slice(0, 7);
+    n[k] = (n[k] || 0) + 1;
+  }
+  return new Set(Object.keys(n).filter((k) => n[k] > 1).map((k) => k.split("|")[0]));
+}
+
+/** A calendar event is routine for the month view when its series repeats within a month or its title reads like routine. */
+export function isMonthRoutine(ev, repeating) {
+  return (ev.series && repeating.has(ev.series)) || ROUTINE_WORDS.test(ev.title || "");
+}
+
+/** First day of the month `n` months after the one `d` is in. */
+export function monthStart(d, n = 0) {
+  return new Date(d.getFullYear(), d.getMonth() + n, 1);
+}
+
+// ---------- Closures ----------
+
+/** Every date (YYYY-MM-DD) a closure covers, first to last inclusive. */
+export function closureDays(c) {
+  const s = parseDay(c.start), e = parseDay(c.end || c.start);
+  if (!s || !e || e < s) return s ? [dateKey(s)] : [];
+  const out = [];
+  for (let d = s; d <= e; d = addDays(d, 1)) out.push(dateKey(d));
+  return out;
+}
+
+/** Closures that end on or after today, soonest first. */
+export function upcomingClosures(list, today) {
+  const t = startOfDay(today);
+  return list.filter((c) => (parseDay(c.end || c.start) || 0) >= t)
+    .sort((a, b) => parseDay(a.start) - parseDay(b.start));
+}
+
+// ---------- Finances ----------
+
+/** Monthly cash-flow summary from a snapshot: income, recurring and one-time spend, what's left, savings rate. */
+export function cashFlow(f) {
+  const inc = f.income.reduce((t, [, v]) => t + v, 0);
+  const rec = f.spend.reduce((t, r) => t + r[1], 0);
+  const one = f.spend.reduce((t, r) => t + r[2], 0);
+  const left = inc - rec;
+  return { inc, rec, one, left, rate: inc ? Math.round((left / inc) * 1000) / 10 : 0 };
+}
+
+/** Dollars. short=true gives $9.7k / $1.2M. */
+export function usd(n, short = false) {
+  const a = Math.abs(n), sign = n < 0 ? "−" : "";
+  if (short && a >= 1e6) return sign + "$" + (a / 1e6).toFixed(1).replace(/\.0$/, "") + "M";
+  if (short && a >= 1e3) return sign + "$" + (a / 1e3).toFixed(1).replace(/\.0$/, "") + "k";
+  return sign + "$" + Math.round(a).toLocaleString("en-US");
+}
