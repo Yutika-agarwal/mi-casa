@@ -12,11 +12,13 @@ Two working parents with a preschooler and a newborn open Mi Casa in the morning
 
 ## What it does
 
-- **This week.** A rolling seven days, today first. Each day opens with a band for long, overlapping duties ("Meera has the baby all day") and then small cards for chores and calendar events. Tap a card to reassign it or move it to another day.
+- **This week.** A rolling seven days, today first. Each day has two columns. The narrower left one, "Just this day", holds what's different about that day: appointments, weekly chores like laundry, weekly events like trash night, school closures, todos due that day and kid milestones. The right one, "Every day", holds the routine in compact rows: kid coverage ("Meera has the baby all day"), the breakfast and school-meal cards, the commute, and calendar events that repeat daily. Tap a card to reassign it or move it to another day.
+- **This month.** Only the big things for this month and the next six: closures, one-off events and birthdays, todos with a due date, milestones, holidays and household changes. Anything that repeats more than once a month counts as routine and stays off this view, so yearly and monthly events still show.
 - **Fair-share badge.** Each parent's share of the combined weekly load, in hours. Green between 45% and 55%. Tap it for the full breakdown.
 - **Todos with three priorities.** P0 needs attention now and also shows at the top of the week. P1 is for the next week or so. P2 is long term and planned, such as a renovation or choosing a school.
-- **A tab per kid.** Age, school, and a dated timeline generated from the birth date: well-child checkups, birthdays, and transitional kindergarten and kindergarten years under California's Sept 1 cutoff. Milestones that need action become P2 todos linked to that kid.
-- **Development notes.** For each kid, physical, emotional and mental/educational: where she is, and what would help.
+- **A tab per kid.** Age, school, and a dated timeline generated from the birth date: well-child checkups, birthdays, and transitional kindergarten and kindergarten years under California's Sept 1 cutoff. Milestones that need action become P2 todos linked to that kid. The older child's tab also has the school's closed days, this week's school meals, and an editable home breakfast menu whose meals appear on each day's breakfast card.
+- **Development notes.** At the bottom of each kid's tab: physical, emotional and mental/educational, each with where she is and what would help.
+- **Finances.** One or two editable goals, a monthly cash-flow snapshot (income, recurring and one-time spending by category, savings rate) and a rough asset split. Every figure in the demo is invented.
 
 ## Why this design
 
@@ -38,11 +40,11 @@ The score is each parent's share of the total. Every number is editable in the F
 
 ## What I tested and what failed
 
-`npm test` runs 27 checks on the logic that must never be wrong: date handling across daylight-saving changes, the load math, the transitional kindergarten cutoff, milestone dates, due-date status and sorting, and a privacy check that no real family details ship in the public code.
+`npm test` runs 42 checks on the logic that must never be wrong: date handling across daylight-saving changes, the load math (including cards that are hidden but still count), the transitional kindergarten cutoff, milestone dates, due-date status and sorting, which column a card belongs in, what This month treats as routine, closure date ranges, the cash-flow math, and a privacy check that no real family names, schools or financial figures ship in the public code.
 
 ```
-# tests 27
-# pass 27
+# tests 42
+# pass 42
 # fail 0
 ```
 
@@ -77,7 +79,7 @@ Event schema, if analytics were added (the demo collects nothing):
 
 ## Roadmap
 
-- **Now:** the private version runs as a Claude artifact with shared storage and a live Google Calendar feed for both parents.
+- **Now:** the private version runs as a Claude artifact with shared storage, a live Google Calendar feed for both parents, and an ask box where either parent types a plain-language change ("move laundry to Sunday and give it to me") that Claude turns into edits, with undo. The ask box and live calendar need the artifact runtime and each parent's own sign-in, so the public demo uses sample events instead.
 - **Next:** add and edit recurring chores and the daily coverage bands from the screen, instead of in code; refresh kids' school updates from email on a schedule.
 - **Later:** a self-hosted version (Node and SQLite on a home Mac mini, reached privately over Tailscale), and a monthly "how did we do" check-in built from the history.
 
@@ -89,7 +91,7 @@ No build step. Any static file server works, because the app uses ES modules.
 git clone https://github.com/Yutika-agarwal/mi-casa.git
 cd mi-casa
 npm start        # serves the folder at http://localhost:3000
-npm test         # runs the 27 checks (Node 20+)
+npm test         # runs the 42 checks (Node 20+)
 ```
 
 More detail: [docs/PRD.md](docs/PRD.md) and [docs/metrics.md](docs/metrics.md).

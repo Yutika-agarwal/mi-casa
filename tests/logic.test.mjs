@@ -2,10 +2,13 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
-  addDays, ageText, autoMilestones, byDue, dateKey, dueStatus, loads, monthsOld,
-  nextPriority, parseDay, rollingWeek, shares, tkStartYear, upcomingMilestones,
+  addDays, ageText, autoMilestones, byDue, cashFlow, closureDays, dailySeries, dateKey, dueStatus, isEveryDay,
+  isMonthRoutine, loads, monthStart, monthsOld, nextPriority, parseDay, repeatingSeries, rollingWeek, shares,
+  timeMins, tkStartYear, upcomingClosures, upcomingMilestones, usd,
 } from "../logic.js";
-import { DEFAULT_HOURS, demoState, routine, sampleCalendar } from "../data.js";
+import {
+  DEFAULT_HOURS, DEFAULT_MENU, FINANCE, calendarRange, demoState, routine, sampleCalendar, sampleClosures,
+} from "../data.js";
 
 const D = (s) => parseDay(s);
 
@@ -128,6 +131,113 @@ test("priority cycles P0 → P1 → P2 → P0", () => {
   assert.equal(nextPriority("P2"), "P0");
 });
 
+// ---- This week: two columns ----
+test("time labels sort clock times by the minute and words at a sensible spot", () => {
+  assert.equal(timeMins("6:30am"), 390);
+  assert.equal(timeMins("12:00pm"), 720);
+  assert.equal(timeMins("12:15am"), 15);
+  assert.equal(timeMins("9pm"), 1260);
+  assert.ok(timeMins("Morning") < timeMins("Afternoon"));
+  assert.ok(timeMins("Evening") < timeMins("9:45pm"));
+  assert.equal(timeMins("whenever"), timeMins("Anytime"));
+});
+test("a series on 5+ days of the week is daily; a weekly one is not", () => {
+  const today = new Date(2026, 10, 11);
+  const w = rollingWeek(today);
+  const daily = dailySeries(calendarRange(today, w[0], addDays(w[6], 1)));
+  assert.ok(daily.has("standup"));
+  assert.ok(!daily.has("trash"));
+});
+test("every-day column takes daily cards and daily series, never closures", () => {
+  const daily = new Set(["standup"]);
+  assert.equal(isEveryDay({ daily: true }, daily), true);
+  assert.equal(isEveryDay({ routine: true }, daily), false);
+  assert.equal(isEveryDay({ cal: true, series: "standup" }, daily), true);
+  assert.equal(isEveryDay({ cal: true, series: "trash" }, daily), false);
+  assert.equal(isEveryDay({ cal: true }, daily), false);
+  assert.equal(isEveryDay({ closure: true, daily: true }, daily), false);
+});
+test("breakfast cards carry the menu for that weekday, weekends included", () => {
+  const w = rollingWeek(new Date(2026, 10, 9)); // Monday
+  const menu = [...DEFAULT_MENU]; menu[1] = "Idli";
+  const bf = routine(w, { menu }).filter((c) => c.title === "Kiara's breakfast");
+  assert.equal(bf.length, 7);
+  assert.equal(bf[0].brief, "Idli");
+  assert.ok(bf.every((c) => c.daily));
+});
+test("no school meals on weekends or closed days", () => {
+  const today = new Date(2026, 10, 9); // Monday
+  const w = rollingWeek(today);
+  const closures = [{ start: "2026-11-11", end: "2026-11-11", what: "Staff day" }];
+  const days = routine(w, { closures }).filter((c) => c.title === "Kiara's meals at school").map((c) => c.date);
+  assert.deepEqual(days, ["2026-11-09", "2026-11-10", "2026-11-12", "2026-11-13"]);
+});
+test("hidden cards still count in the load split", () => {
+  const w = rollingWeek(new Date(2026, 10, 9));
+  const hidden = routine(w).filter((c) => c.hidden && c.owner === "a");
+  assert.ok(hidden.length > 0);
+  const L = loads([], hidden.map((c) => ({ ...c, day: 0 })));
+  assert.ok(L.a > 0);
+});
+
+// ---- This month ----
+test("routine for the month: repeats within a month or routine words", () => {
+  const ev = (series, y, m, d, title = "x") => ({ series, title, start: new Date(y, m, d) });
+  const list = [ev("weekly", 2026, 10, 3), ev("weekly", 2026, 10, 10), ev("monthly", 2026, 10, 12), ev("monthly", 2026, 11, 12), ev("yearly", 2026, 10, 20)];
+  const rep = repeatingSeries(list);
+  assert.deepEqual([...rep], ["weekly"]);
+  assert.equal(isMonthRoutine(list[0], rep), true);
+  assert.equal(isMonthRoutine(list[2], rep), false);
+  assert.equal(isMonthRoutine({ title: "Daily commute" }, rep), true);
+  assert.equal(isMonthRoutine({ title: "Grandpa's birthday" }, rep), false);
+});
+test("month boundaries roll over the year", () => {
+  assert.equal(dateKey(monthStart(new Date(2026, 10, 11))), "2026-11-01");
+  assert.equal(dateKey(monthStart(new Date(2026, 10, 11), 2)), "2027-01-01");
+});
+test("sample calendar range stays inside the range asked for", () => {
+  const today = new Date(2026, 10, 11);
+  const from = monthStart(today), to = monthStart(today, 7);
+  const list = calendarRange(today, from, to);
+  assert.ok(list.length > 20);
+  for (const ev of list) assert.ok(ev.start >= from && ev.start < to);
+  assert.equal(new Set(list.map((e) => e.id)).size, list.length);
+});
+
+// ---- Closures ----
+test("a closure covers every day from first to last", () => {
+  assert.deepEqual(closureDays({ start: "2026-12-30", end: "2027-01-02" }), ["2026-12-30", "2026-12-31", "2027-01-01", "2027-01-02"]);
+  assert.deepEqual(closureDays({ start: "2026-11-11" }), ["2026-11-11"]);
+});
+test("upcoming closures keep one still in progress and drop past ones", () => {
+  const list = [{ start: "2026-11-01", end: "2026-11-02" }, { start: "2026-11-10", end: "2026-11-12" }, { start: "2026-12-01" }];
+  assert.deepEqual(upcomingClosures(list, new Date(2026, 10, 11)).map((c) => c.start), ["2026-11-10", "2026-12-01"]);
+});
+test("sample closures are all in the future and start and end on weekdays", () => {
+  for (let i = 0; i < 7; i++) {
+    const today = new Date(2026, 10, 9 + i);
+    const list = sampleClosures(today);
+    assert.equal(upcomingClosures(list, today).length, list.length);
+    for (const c of list) for (const k of [c.start, c.end]) assert.ok(![0, 6].includes(parseDay(k).getDay()), `${k} is a weekend`);
+  }
+});
+
+// ---- Finances ----
+test("cash flow adds up and the savings rate is income minus recurring", () => {
+  const cf = cashFlow({ income: [["x", 10000]], spend: [["a", 3000, 500], ["b", 1000, 0]] });
+  assert.deepEqual(cf, { inc: 10000, rec: 4000, one: 500, left: 6000, rate: 60 });
+  assert.equal(cashFlow({ income: [], spend: [] }).rate, 0);
+});
+test("dollar formatting", () => {
+  assert.equal(usd(9709), "$9,709");
+  assert.equal(usd(9709, true), "$9.7k");
+  assert.equal(usd(3000000, true), "$3M");
+  assert.equal(usd(-1500, true), "−$1.5k");
+});
+test("sample finances leave a surplus", () => {
+  assert.ok(cashFlow(FINANCE.snapshot).left > 0);
+});
+
 // ---- Demo data and privacy ----
 test("routine card ids are unique and stable for the same day", () => {
   const w = rollingWeek(new Date(2026, 9, 28));
@@ -149,8 +259,13 @@ test("demo state is self-consistent", () => {
   }
 });
 test("no real family details ship in the public demo", () => {
-  const banned = ["Nimit", "Yutika", "Zoya", "Navya", "Lucciola", "Nigania", "@gmail.com"];
-  for (const f of ["data.js", "app.js", "index.html", "logic.js"]) {
+  const banned = [
+    "Nimit", "Yutika", "Zoya", "Navya", "Lucciola", "Nigania", "@gmail.com", "Briseida", "Sequoia",
+    // Real finance sources and figures from the private hub.
+    "eBay", "Snap payroll", "Google payroll", "GEICO", "Air India", "Capital One", "docs.google.com",
+    "38293", "38,293", "9709", "9,709", "300000", "3000000", "900000",
+  ];
+  for (const f of ["data.js", "app.js", "index.html", "logic.js", "styles.css"]) {
     const src = readFileSync(new URL(`../${f}`, import.meta.url), "utf8");
     for (const word of banned) assert.ok(!src.includes(word), `${f} mentions ${word}`);
   }
